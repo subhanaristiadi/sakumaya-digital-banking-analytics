@@ -1,0 +1,323 @@
+-- ============================================================
+-- SAKUMAYA DIGITAL BANKING ANALYTICS
+-- 08 — DASHBOARD KPI DATASET
+--
+-- Purpose:
+-- Prepare dashboard-ready KPI tables for Power BI / Tableau.
+--
+-- Database schema: sakumaya
+-- ============================================================
+
+SET search_path TO sakumaya;
+
+
+-- ============================================================
+-- KPI 1. CUSTOMER & KYC
+-- ============================================================
+
+SELECT
+    COUNT(*) AS total_customers,
+    COUNT(*) FILTER (
+        WHERE kyc_status = 'verified'
+    ) AS verified_customers,
+    COUNT(*) FILTER (
+        WHERE kyc_status = 'pending'
+    ) AS pending_customers,
+    COUNT(*) FILTER (
+        WHERE kyc_status = 'rejected'
+    ) AS rejected_customers,
+    COUNT(*) FILTER (
+        WHERE kyc_status = 'unverified'
+    ) AS unverified_customers,
+    ROUND(
+        COUNT(*) FILTER (
+            WHERE kyc_status = 'verified'
+        ) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+    ) AS kyc_verification_rate_pct
+FROM customers;
+
+
+-- ============================================================
+-- KPI 2. ACCOUNT & AUM PROXY
+-- ============================================================
+
+SELECT
+    COUNT(*) AS total_accounts,
+    COUNT(*) FILTER (
+        WHERE status = 'active'
+    ) AS active_accounts,
+    COUNT(*) FILTER (
+        WHERE status = 'dormant'
+    ) AS dormant_accounts,
+    COUNT(*) FILTER (
+        WHERE status = 'closed'
+    ) AS closed_accounts,
+    SUM(balance_idr) AS total_balance_idr,
+    SUM(balance_idr) FILTER (
+        WHERE status = 'active'
+    ) AS active_balance_idr,
+    ROUND(
+        SUM(balance_idr) FILTER (
+            WHERE status = 'active'
+        ) * 100.0
+        / NULLIF(SUM(balance_idr), 0),
+        2
+    ) AS active_balance_share_pct
+FROM accounts;
+
+
+-- ============================================================
+-- KPI 3. TRANSACTION PERFORMANCE
+-- ============================================================
+
+SELECT
+    COUNT(*) AS total_transactions,
+    COUNT(*) FILTER (
+        WHERE status = 'success'
+    ) AS successful_transactions,
+    COUNT(*) FILTER (
+        WHERE status = 'failed'
+    ) AS failed_transactions,
+    SUM(amount_idr) AS total_transaction_value_idr,
+    SUM(amount_idr) FILTER (
+        WHERE status = 'success'
+    ) AS successful_transaction_value_idr,
+    ROUND(
+        COUNT(*) FILTER (
+            WHERE status = 'success'
+        ) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+    ) AS success_rate_pct,
+    ROUND(
+        COUNT(*) FILTER (
+            WHERE status = 'failed'
+        ) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+    ) AS failure_rate_pct
+FROM transactions;
+
+
+-- ============================================================
+-- KPI 4. LOAN PORTFOLIO & RISK
+-- ============================================================
+
+SELECT
+    COUNT(*) AS total_loans,
+    SUM(principal_idr) AS total_principal_idr,
+    SUM(outstanding_idr) AS total_outstanding_idr,
+
+    COUNT(*) FILTER (
+        WHERE status = 'active'
+    ) AS active_loans,
+
+    COUNT(*) FILTER (
+        WHERE status = 'paid_off'
+    ) AS paid_off_loans,
+
+    COUNT(*) FILTER (
+        WHERE status = 'overdue'
+    ) AS overdue_loans,
+
+    COUNT(*) FILTER (
+        WHERE status = 'written_off'
+    ) AS written_off_loans,
+
+    ROUND(
+        COUNT(*) FILTER (
+            WHERE status = 'overdue'
+        ) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+    ) AS overdue_rate_pct,
+
+    ROUND(
+        COUNT(*) FILTER (
+            WHERE status = 'written_off'
+        ) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+    ) AS writeoff_rate_pct,
+
+    ROUND(
+        COUNT(*) FILTER (
+            WHERE status IN ('overdue', 'written_off')
+        ) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+    ) AS at_risk_loan_rate_pct
+
+FROM loans;
+
+
+-- ============================================================
+-- KPI 5. CARD PORTFOLIO
+-- ============================================================
+
+SELECT
+    COUNT(*) AS total_cards,
+
+    COUNT(*) FILTER (
+        WHERE card_type = 'debit'
+    ) AS debit_cards,
+
+    COUNT(*) FILTER (
+        WHERE card_type = 'credit'
+    ) AS credit_cards,
+
+    COUNT(*) FILTER (
+        WHERE card_type = 'prepaid'
+    ) AS prepaid_cards,
+
+    COUNT(*) FILTER (
+        WHERE status = 'active'
+    ) AS active_cards,
+
+    COUNT(*) FILTER (
+        WHERE status = 'blocked'
+    ) AS blocked_cards,
+
+    COUNT(*) FILTER (
+        WHERE status = 'expired'
+    ) AS expired_cards
+
+FROM cards;
+
+
+-- ============================================================
+-- KPI 6. CREDIT CARD UTILIZATION
+-- ============================================================
+
+SELECT
+    COUNT(*) AS eligible_credit_cards,
+    SUM(credit_limit_idr) AS total_credit_limit_idr,
+    SUM(outstanding_idr) AS total_credit_outstanding_idr,
+    ROUND(
+        SUM(outstanding_idr) * 100.0
+        / NULLIF(SUM(credit_limit_idr), 0),
+        2
+    ) AS credit_utilization_pct
+FROM cards
+WHERE card_type = 'credit'
+  AND credit_limit_idr > 0;
+
+
+-- ============================================================
+-- DASHBOARD BREAKDOWN 1. KYC STATUS
+-- ============================================================
+
+SELECT
+    kyc_status,
+    COUNT(*) AS customer_count,
+    ROUND(
+        COUNT(*) * 100.0
+        / SUM(COUNT(*)) OVER (),
+        2
+    ) AS percentage
+FROM customers
+GROUP BY kyc_status
+ORDER BY customer_count DESC;
+
+
+-- ============================================================
+-- DASHBOARD BREAKDOWN 2. AUM BY TIER
+-- ============================================================
+
+SELECT
+    tier,
+    COUNT(*) FILTER (
+        WHERE status = 'active'
+    ) AS active_accounts,
+    SUM(balance_idr) FILTER (
+        WHERE status = 'active'
+    ) AS active_balance_idr,
+    ROUND(
+        SUM(balance_idr) FILTER (
+            WHERE status = 'active'
+        ) * 100.0
+        / NULLIF(
+            SUM(SUM(balance_idr)) FILTER (
+                WHERE status = 'active'
+            ) OVER (),
+            0
+        ),
+        2
+    ) AS aum_share_pct
+FROM accounts
+GROUP BY tier
+ORDER BY
+    CASE tier
+        WHEN 'basic' THEN 1
+        WHEN 'silver' THEN 2
+        WHEN 'gold' THEN 3
+        WHEN 'platinum' THEN 4
+    END;
+
+
+-- ============================================================
+-- DASHBOARD BREAKDOWN 3. MONTHLY TRANSACTIONS
+-- ============================================================
+
+SELECT
+    DATE_TRUNC('month', trx_date)::date AS month,
+    COUNT(*) AS transaction_volume,
+    SUM(amount_idr) AS transaction_value_idr,
+    COUNT(*) FILTER (
+        WHERE status = 'failed'
+    ) AS failed_transactions,
+    ROUND(
+        COUNT(*) FILTER (
+            WHERE status = 'failed'
+        ) * 100.0 / NULLIF(COUNT(*), 0),
+        2
+    ) AS failure_rate_pct
+FROM transactions
+GROUP BY DATE_TRUNC('month', trx_date)
+ORDER BY month;
+
+
+-- ============================================================
+-- DASHBOARD BREAKDOWN 4. LOAN STATUS
+-- ============================================================
+
+SELECT
+    status,
+    COUNT(*) AS loan_count,
+    SUM(principal_idr) AS principal_idr,
+    SUM(outstanding_idr) AS outstanding_idr,
+    ROUND(
+        COUNT(*) * 100.0
+        / SUM(COUNT(*)) OVER (),
+        2
+    ) AS loan_share_pct
+FROM loans
+GROUP BY status
+ORDER BY loan_count DESC;
+
+
+-- ============================================================
+-- DASHBOARD BREAKDOWN 5. CHANNEL MIX
+-- ============================================================
+
+SELECT
+    channel,
+    COUNT(*) AS transaction_volume,
+    SUM(amount_idr) AS transaction_value_idr,
+    ROUND(
+        COUNT(*) * 100.0
+        / SUM(COUNT(*)) OVER (),
+        2
+    ) AS volume_share_pct,
+    ROUND(
+        SUM(amount_idr) * 100.0
+        / NULLIF(
+            SUM(SUM(amount_idr)) OVER (),
+            0
+        ),
+        2
+    ) AS value_share_pct
+FROM transactions
+GROUP BY channel
+ORDER BY transaction_volume DESC;
+
+
+-- ============================================================
+-- END OF DASHBOARD KPI DATASET
+-- ============================================================
